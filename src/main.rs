@@ -40,6 +40,29 @@ struct Users {
     email: String,
 }
 
+fn now() -> Result<u32, Error> {
+    Ok(SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(ErrorInternalServerError)?
+        .as_secs() as u32)
+}
+
+async fn authenticate(session: &Session, pool: &SqlitePool) -> Result<u32, Error> {
+    Ok(
+        sqlx::query_scalar::<_, u32>("UPDATE login SET time = ? WHERE token = ? RETURNING uid")
+            .bind(now()?) // 2038 bug
+            .bind(
+                session
+                    .get::<u32>("token")?
+                    .ok_or(ErrorUnauthorized("not logged in\n"))?,
+            )
+            .fetch_optional(pool)
+            .await
+            .map_err(ErrorInternalServerError)?
+            .ok_or(ErrorUnauthorized("not logged in\n"))?,
+    )
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
@@ -117,13 +140,8 @@ async fn signup(
     req: web::Json<LoginForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    if let None = session.get::<i32>("token")? {
+    if let None = session.get::<u32>("token")? {
         let password = blake3::hash(req.password.as_bytes()).to_string();
-
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map_err(ErrorInternalServerError)?
-            .as_secs() as u32;
 
         sqlx::query(
             "INSERT INTO users (email, password, time, admin)
@@ -131,7 +149,7 @@ async fn signup(
         )
         .bind(&req.email)
         .bind(&password)
-        .bind(&now) // 2038 bug
+        .bind(now()?) // 2038 bug
         .execute(&state.pool)
         .await
         .map_err(ErrorInternalServerError)?;
@@ -147,8 +165,8 @@ async fn login(
     req: web::Json<LoginForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    if let None = session.get::<i32>("token")? {
-        let (uid, password): (i32, String) =
+    if let None = session.get::<u32>("token")? {
+        let (uid, password): (u32, String) =
             sqlx::query_as("SELECT uid, password FROM users WHERE email=?")
                 .bind(&req.email)
                 .fetch_one(&state.pool)
@@ -156,17 +174,12 @@ async fn login(
                 .map_err(ErrorUnauthorized)?;
 
         if blake3::hash(req.password.as_bytes()).to_string() == password {
-            let now = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map_err(ErrorInternalServerError)?
-                .as_secs() as u32;
-
-            let token: i32 = sqlx::query_scalar(
+            let token: u32 = sqlx::query_scalar(
                 "INSERT INTO login (uid, time)
                     VALUES (?, ?) RETURNING token",
             )
             .bind(&uid)
-            .bind(&now) // 2038 bug
+            .bind(now()?) // 2038 bug
             .fetch_one(&state.pool)
             .await
             .map_err(ErrorInternalServerError)?;
@@ -184,7 +197,7 @@ async fn login(
 }
 
 async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    if let Some(token) = session.get::<i32>("token")? {
+    if let Some(token) = session.get::<u32>("token")? {
         sqlx::query("DELETE FROM login WHERE token=?")
             .bind(&token)
             .execute(&state.pool)
@@ -209,35 +222,12 @@ async fn register(
     req: web::Json<RegisterForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    let token = session
-        .get::<i32>("token")?
-        .ok_or(ErrorUnauthorized("not logged in\n"))?;
-
-    let uid = sqlx::query_scalar::<_, i32>("SELECT uid FROM login WHERE token=?")
-        .bind(&token)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?
-        .ok_or(ErrorUnauthorized("not logged in\n"))?;
-
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(ErrorInternalServerError)?
-        .as_secs() as u32;
-
-    sqlx::query("UPDATE login SET time = ? WHERE token = ?")
-        .bind(&now) // 2038 bug
-        .bind(&token) // 2038 bug
-        .execute(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?;
-
     sqlx::query(
         "INSERT INTO devices (did, uid)
-                    VALUES (?, ?) RETURNING token",
+                    VALUES (?, ?)",
     )
     .bind(&req.did)
-    .bind(&uid)
+    .bind(authenticate(&session, &state.pool).await?)
     .execute(&state.pool)
     .await
     .map_err(ErrorInternalServerError)?;
@@ -250,36 +240,13 @@ async fn upload(
     req: web::Json<UploadForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    let token = session
-        .get::<i32>("token")?
-        .ok_or(ErrorUnauthorized("not logged in\n"))?;
-
-    let uid = sqlx::query_scalar::<_, i32>("SELECT uid FROM login WHERE token=?")
-        .bind(&token)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?
-        .ok_or(ErrorUnauthorized("not logged in\n"))?;
-
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(ErrorInternalServerError)?
-        .as_secs() as u32;
-
-    sqlx::query("UPDATE login SET time = ? WHERE token = ?")
-        .bind(&now) // 2038 bug
-        .bind(&token) // 2038 bug
-        .execute(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?;
-
     sqlx::query(
         "INSERT INTO log (did, uid, time, data)
-                    VALUES (?, ?, ?, ?) RETURNING token",
+                    VALUES (?, ?, ?, ?)",
     )
     .bind(&req.did)
-    .bind(&uid)
-    .bind(&now) // 2038 bug
+    .bind(authenticate(&session, &state.pool).await?)
+    .bind(now()?) // 2038 bug
     .bind(&req.data)
     .execute(&state.pool)
     .await
@@ -289,57 +256,27 @@ async fn upload(
 }
 
 async fn download(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    let token = session
-        .get::<i32>("token")?
-        .ok_or(ErrorUnauthorized("not logged in\n"))?;
-
-    let uid = sqlx::query_scalar::<_, i32>("SELECT uid FROM login WHERE token=?")
-        .bind(&token)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?
-        .ok_or(ErrorUnauthorized("not logged in\n"))?;
-
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(ErrorInternalServerError)?
-        .as_secs() as u32;
-
-    sqlx::query("UPDATE login SET time = ? WHERE token = ?")
-        .bind(&now) // 2038 bug
-        .bind(&token) // 2038 bug
-        .execute(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?;
-
-    match sqlx::query_scalar::<_, String>("SELECT data FROM log WHERE uid=?")
-        .bind(&uid)
-        .fetch_all(&state.pool)
-        .await
-    {
-        Ok(data) => Ok(HttpResponse::Ok().json(data)),
-        Err(e) => Err(ErrorInternalServerError(e)),
-    }
+    Ok(HttpResponse::Ok().json(
+        sqlx::query_scalar::<_, String>("SELECT data FROM log WHERE uid=?")
+            .bind(authenticate(&session, &state.pool).await?)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(ErrorInternalServerError)?,
+    ))
 }
 
 async fn list(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    match sqlx::query_as::<_, Users>("SELECT uid, email FROM users")
-        .fetch_all(&state.pool)
-        .await
-    {
-        Ok(usr) => Ok(HttpResponse::Ok().json(usr)),
-        Err(e) => Err(ErrorInternalServerError(e)),
-    }
+    Ok(HttpResponse::Ok().json(
+        sqlx::query_as::<_, Users>("SELECT uid, email FROM users")
+            .fetch_all(&state.pool)
+            .await
+            .map_err(ErrorInternalServerError)?,
+    ))
 }
 
 async fn update(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(ErrorInternalServerError)?
-        .as_secs() as u32;
-
     sqlx::query("DELETE FROM login WHERE time < ?")
-        .bind(now - TIMEOUT) // 2038 bug
+        .bind(now()? - TIMEOUT) // 2038 bug
         .execute(&state.pool)
         .await
         .map_err(ErrorInternalServerError)?;
