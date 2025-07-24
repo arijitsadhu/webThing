@@ -4,50 +4,58 @@ use actix_web::{
     error::ErrorInternalServerError, error::ErrorUnauthorized, http::header::LOCATION,
     middleware::Logger, web,
 };
-use serde::{Deserialize, Serialize};
-use sqlx::{
-    FromRow,
-    sqlite::{SqliteConnectOptions, SqlitePool},
-};
-use std::time::SystemTime;
 
 const TIMEOUT: u32 = 100;
+const WORKERS: usize = 4;
 
 struct AppState {
-    pool: SqlitePool,
+    pool: sqlx::sqlite::SqlitePool,
 }
 
-#[derive(Deserialize)]
+#[derive(serde::Deserialize)]
 struct LoginForm {
     email: String,
     password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(serde::Deserialize)]
 struct RegisterForm {
     did: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(serde::Deserialize)]
+struct CmdForm {
+    did: u32,
+    cmd: String,
+}
+
+#[derive(serde::Deserialize)]
 struct UploadForm {
     did: u32,
     data: String,
 }
 
-#[derive(FromRow, Serialize)]
-struct Users {
-    uid: u32,
-    email: String,
+#[derive(serde::Deserialize)]
+struct DownloadForm {
+    start: u32,
+    end: u32,
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+struct Logs {
+    did: u32,
+    time: u32,
+    data: String,
 }
 
 fn now() -> Result<u32, Error> {
-    Ok(SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .map_err(ErrorInternalServerError)?
         .as_secs() as u32)
 }
 
-async fn authenticate(session: &Session, pool: &SqlitePool) -> Result<u32, Error> {
+async fn authenticate(session: &Session, pool: &sqlx::sqlite::SqlitePool) -> Result<u32, Error> {
     Ok(
         sqlx::query_scalar::<_, u32>("UPDATE login SET time = ? WHERE token = ? RETURNING uid")
             .bind(now()?) // 2038 bug
@@ -68,8 +76,8 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     let pool = match std::env::var("DATABASE_FILE") {
-        Ok(file) => SqlitePool::connect_with(
-            SqliteConnectOptions::new()
+        Ok(file) => sqlx::sqlite::SqlitePool::connect_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
                 .filename(file)
                 .create_if_missing(true),
         )
@@ -102,7 +110,11 @@ async fn main() -> std::io::Result<()> {
             did INTEGER NOT NULL,
             uid INTEGER NOT NULL,
             time DATETIME NOT NULL,
-            data BLOB
+            data TEXT
+        ); 
+        CREATE TABLE IF NOT EXISTS cmd (
+            did INTEGER PRIMARY KEY,
+            cmd TEXT
         );",
     )
     .execute(&pool)
@@ -120,16 +132,17 @@ async fn main() -> std::io::Result<()> {
                     .cookie_secure(false)
                     .build(),
             )
-            .route("/logout", web::get().to(logout))
-            .route("/login", web::post().to(login))
             .route("/signup", web::post().to(signup))
             .route("/register", web::post().to(register))
+            .route("/devices", web::get().to(devices))
+            .route("/login", web::post().to(login))
+            .route("/logout", web::get().to(logout))
+            .route("/cmd", web::post().to(cmd))
             .route("/upload", web::post().to(upload))
-            .route("/download", web::get().to(download))
-            .route("/list", web::get().to(list))
+            .route("/download", web::post().to(download))
             .route("/update", web::get().to(update))
     })
-    .workers(4)
+    .workers(WORKERS)
     .bind(("0.0.0.0", 8080))?
     .run()
     .await
@@ -235,6 +248,36 @@ async fn register(
     Ok(HttpResponse::Ok().body("uploaded\n"))
 }
 
+async fn devices(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
+    Ok(HttpResponse::Ok().json(
+        sqlx::query_scalar::<_, u32>("SELECT did FROM devices WHERE uid=?")
+            .bind(authenticate(&session, &state.pool).await?)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(ErrorInternalServerError)?,
+    ))
+}
+
+async fn cmd(
+    session: Session,
+    req: web::Json<CmdForm>,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, Error> {
+    let _ = authenticate(&session, &state.pool).await?;
+
+    sqlx::query(
+        "INSERT INTO cmd (cmd)
+                    VALUES (?) where did=?",
+    )
+    .bind(&req.cmd)
+    .bind(&req.did)
+    .execute(&state.pool)
+    .await
+    .map_err(ErrorInternalServerError)?;
+
+    Ok(HttpResponse::Ok().body("cmd requested\n"))
+}
+
 async fn upload(
     session: Session,
     req: web::Json<UploadForm>,
@@ -252,25 +295,30 @@ async fn upload(
     .await
     .map_err(ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().body("uploaded\n"))
-}
-
-async fn download(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    Ok(HttpResponse::Ok().json(
-        sqlx::query_scalar::<_, String>("SELECT data FROM log WHERE uid=?")
-            .bind(authenticate(&session, &state.pool).await?)
-            .fetch_all(&state.pool)
+    Ok(HttpResponse::Ok().body(
+        sqlx::query_scalar::<_, String>("SELECT cmd FROM cmd WHERE did=?")
+            .bind(&req.did)
+            .fetch_one(&state.pool)
             .await
             .map_err(ErrorInternalServerError)?,
     ))
 }
 
-async fn list(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
+async fn download(
+    session: Session,
+    req: web::Json<DownloadForm>,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, Error> {
     Ok(HttpResponse::Ok().json(
-        sqlx::query_as::<_, Users>("SELECT uid, email FROM users")
-            .fetch_all(&state.pool)
-            .await
-            .map_err(ErrorInternalServerError)?,
+        sqlx::query_as::<_, Logs>(
+            "SELECT did, time, data FROM log WHERE uid=? AND time>? AND time<?",
+        )
+        .bind(authenticate(&session, &state.pool).await?)
+        .bind(&req.start)
+        .bind(&req.end)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(ErrorInternalServerError)?,
     ))
 }
 
