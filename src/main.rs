@@ -1,15 +1,20 @@
 use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
-    App, Error, HttpRequest, HttpResponse, HttpServer, Result, cookie::Key,
-    error::ErrorInternalServerError, error::ErrorUnauthorized, http::header::LOCATION,
-    middleware::Logger, web,
+    App, Error, HttpRequest, HttpResponse, HttpServer, Result, cookie,
+    error::{ErrorInternalServerError, ErrorUnauthorized},
+    http::header::LOCATION,
+    middleware::Logger,
+    web,
 };
 
 const TIMEOUT: u32 = 100;
+const EXPIRY: u32 = 3600 * 24 * 30;
 const WORKERS: usize = 4;
 
 struct AppState {
     pool: sqlx::sqlite::SqlitePool,
+    timeout: u32,
+    expiry: u32,
 }
 
 #[derive(serde::Deserialize)]
@@ -88,6 +93,22 @@ async fn main() -> std::io::Result<()> {
             .unwrap(),
     };
 
+    let expiry = match std::env::var("EXPIRY_SECONDS") {
+        Ok(time) => match time.parse() {
+            Ok(time) => time,
+            Err(_) => EXPIRY,
+        },
+        Err(_) => EXPIRY,
+    };
+
+    let timeout = match std::env::var("TIMEOUT_SECONDS") {
+        Ok(time) => match time.parse() {
+            Ok(time) => time,
+            Err(_) => TIMEOUT,
+        },
+        Err(_) => TIMEOUT,
+    };
+
     sqlx::raw_sql(
         "CREATE TABLE IF NOT EXISTS users (
             uid INTEGER PRIMARY KEY,
@@ -123,14 +144,21 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(AppState { pool: pool.clone() }))
+            .app_data(web::Data::new(AppState {
+                pool: pool.clone(),
+                expiry: expiry,
+                timeout: timeout,
+            }))
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
             .wrap(
                 // create cookie based session middleware
-                SessionMiddleware::builder(CookieSessionStore::default(), Key::from(&[0; 64]))
-                    .cookie_secure(false)
-                    .build(),
+                SessionMiddleware::builder(
+                    CookieSessionStore::default(),
+                    cookie::Key::from(&[0; 64]),
+                )
+                .cookie_secure(false)
+                .build(),
             )
             .route("/signup", web::post().to(signup))
             .route("/register", web::post().to(register))
@@ -323,8 +351,16 @@ async fn download(
 }
 
 async fn update(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
+    let now = now()?;
+
     sqlx::query("DELETE FROM login WHERE time < ?")
-        .bind(now()? - TIMEOUT) // 2038 bug
+        .bind(now - state.timeout) // 2038 bug
+        .execute(&state.pool)
+        .await
+        .map_err(ErrorInternalServerError)?;
+
+    sqlx::query("DELETE FROM log WHERE time < ?")
+        .bind(now - state.expiry) // 2038 bug
         .execute(&state.pool)
         .await
         .map_err(ErrorInternalServerError)?;
