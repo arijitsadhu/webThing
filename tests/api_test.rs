@@ -2,16 +2,15 @@ use hurl::runner;
 use hurl::runner::{RunnerOptionsBuilder, Value, VariableSet};
 use hurl::util::logger::LoggerOptionsBuilder;
 use hurl_core::input::Input;
-use std::process::Command; // Run programs
 
 #[test]
 fn api_test() -> Result<(), Box<dyn std::error::Error>> {
-    let mut child = Command::new("webThing")
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_webThing"))
         .env("DATABASE_FILE", "data.db")
         .spawn()?;
 
     // Read hurl file
-    let content = "./tests/api.hurl".to_string();
+    let content = std::fs::read_to_string("./tests/api.hurl")?;
 
     // Set the baseurl variable
     let mut variables = VariableSet::new();
@@ -29,12 +28,11 @@ fn api_test() -> Result<(), Box<dyn std::error::Error>> {
         &runner_opts,
         &variables,
         &logger_opts,
-    )
-    .unwrap();
-
-    assert!(result.success);
+    )?;
 
     child.kill()?;
+
+    assert!(result.success);
 
     Ok(())
 }
