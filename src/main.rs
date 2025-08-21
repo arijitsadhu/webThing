@@ -1,12 +1,13 @@
 use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
-    App, Error, HttpRequest, HttpResponse, HttpServer, Result, cookie,
+    App, Error, HttpResponse, HttpServer, Result, cookie,
     error::{ErrorInternalServerError, ErrorUnauthorized},
     http::header::LOCATION,
     middleware::Logger,
     web,
 };
 
+const HTTP_PORT: u16 = 80;
 const TIMEOUT: u32 = 100;
 const EXPIRY: u32 = 3600 * 24 * 30;
 const WORKERS: usize = 4;
@@ -93,6 +94,14 @@ async fn main() -> std::io::Result<()> {
             .unwrap(),
     };
 
+    let port = match std::env::var("HTTP_PORT") {
+        Ok(port) => match port.parse() {
+            Ok(port) => port,
+            Err(_) => HTTP_PORT,
+        },
+        Err(_) => HTTP_PORT,
+    };
+
     let expiry = match std::env::var("EXPIRY_SECONDS") {
         Ok(time) => match time.parse() {
             Ok(time) => time,
@@ -119,7 +128,8 @@ async fn main() -> std::io::Result<()> {
         );
         CREATE TABLE IF NOT EXISTS devices (
             did INTEGER PRIMARY KEY,
-            uid INTEGER NOT NULL
+            uid INTEGER NOT NULL,
+            cmd TEXT
         );
         CREATE TABLE IF NOT EXISTS login (
             token INTEGER PRIMARY KEY,
@@ -132,10 +142,6 @@ async fn main() -> std::io::Result<()> {
             uid INTEGER NOT NULL,
             time DATETIME NOT NULL,
             data TEXT
-        ); 
-        CREATE TABLE IF NOT EXISTS cmd (
-            did INTEGER PRIMARY KEY,
-            cmd TEXT
         );",
     )
     .execute(&pool)
@@ -171,7 +177,7 @@ async fn main() -> std::io::Result<()> {
             .route("/update", web::get().to(update))
     })
     .workers(WORKERS)
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", port))?
     .run()
     .await
 }
@@ -184,21 +190,16 @@ async fn signup(
     if let None = session.get::<u32>("token")? {
         let password = blake3::hash(req.password.as_bytes()).to_string();
 
-        sqlx::query(
-            "INSERT INTO users (email, password, time, admin)
-                    VALUES (?, ?, ?, 0)",
-        )
-        .bind(&req.email)
-        .bind(&password)
-        .bind(now()?) // 2038 bug
-        .execute(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?;
+        sqlx::query("INSERT INTO users (email, password, time, admin) VALUES (?, ?, ?, 0)")
+            .bind(&req.email)
+            .bind(&password)
+            .bind(now()?) // 2038 bug
+            .execute(&state.pool)
+            .await
+            .map_err(ErrorInternalServerError)?;
     }
 
-    Ok(HttpResponse::SeeOther()
-        .insert_header((LOCATION, "/"))
-        .body("signed up\n"))
+    Ok(HttpResponse::Ok().body("signed up\n"))
 }
 
 async fn login(
@@ -215,15 +216,13 @@ async fn login(
                 .map_err(ErrorUnauthorized)?;
 
         if blake3::hash(req.password.as_bytes()).to_string() == password {
-            let token: u32 = sqlx::query_scalar(
-                "INSERT INTO login (uid, time)
-                    VALUES (?, ?) RETURNING token",
-            )
-            .bind(&uid)
-            .bind(now()?) // 2038 bug
-            .fetch_one(&state.pool)
-            .await
-            .map_err(ErrorInternalServerError)?;
+            let token: u32 =
+                sqlx::query_scalar("INSERT INTO login (uid, time) VALUES (?, ?) RETURNING token")
+                    .bind(&uid)
+                    .bind(now()?) // 2038 bug
+                    .fetch_one(&state.pool)
+                    .await
+                    .map_err(ErrorInternalServerError)?;
 
             session.insert("token", &token)?;
             session.insert("uid", &uid)?;
@@ -232,9 +231,7 @@ async fn login(
         }
     }
 
-    Ok(HttpResponse::SeeOther()
-        .insert_header((LOCATION, "/"))
-        .body("logged in\n"))
+    Ok(HttpResponse::Ok().body("logged in\n"))
 }
 
 async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
@@ -248,9 +245,7 @@ async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResp
         session.remove("token");
         session.remove("uid");
 
-        Ok(HttpResponse::SeeOther()
-            .insert_header((LOCATION, "/"))
-            .body("logout\n"))
+        Ok(HttpResponse::Ok().body("logout\n"))
     } else {
         Ok(HttpResponse::SeeOther()
             .insert_header((LOCATION, "/"))
@@ -263,17 +258,14 @@ async fn register(
     req: web::Json<RegisterForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    sqlx::query(
-        "INSERT INTO devices (did, uid)
-                    VALUES (?, ?)",
-    )
-    .bind(&req.did)
-    .bind(authenticate(&session, &state.pool).await?)
-    .execute(&state.pool)
-    .await
-    .map_err(ErrorInternalServerError)?;
+    sqlx::query("INSERT INTO devices (did, uid) VALUES (?, ?)")
+        .bind(&req.did)
+        .bind(authenticate(&session, &state.pool).await?)
+        .execute(&state.pool)
+        .await
+        .map_err(ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().body("uploaded\n"))
+    Ok(HttpResponse::Ok().body("registered\n"))
 }
 
 async fn devices(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
@@ -293,15 +285,12 @@ async fn cmd(
 ) -> Result<HttpResponse, Error> {
     let _ = authenticate(&session, &state.pool).await?;
 
-    sqlx::query(
-        "INSERT INTO cmd (cmd)
-                    VALUES (?) where did=?",
-    )
-    .bind(&req.cmd)
-    .bind(&req.did)
-    .execute(&state.pool)
-    .await
-    .map_err(ErrorInternalServerError)?;
+    sqlx::query("UPDATE devices SET cmd=? WHERE did=?")
+        .bind(&req.cmd)
+        .bind(&req.did)
+        .execute(&state.pool)
+        .await
+        .map_err(ErrorInternalServerError)?;
 
     Ok(HttpResponse::Ok().body("cmd requested\n"))
 }
@@ -311,24 +300,22 @@ async fn upload(
     req: web::Json<UploadForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    sqlx::query(
-        "INSERT INTO log (did, uid, time, data)
-                    VALUES (?, ?, ?, ?)",
-    )
-    .bind(&req.did)
-    .bind(authenticate(&session, &state.pool).await?)
-    .bind(now()?) // 2038 bug
-    .bind(&req.data)
-    .execute(&state.pool)
-    .await
-    .map_err(ErrorInternalServerError)?;
+    sqlx::query("INSERT INTO log (did, uid, time, data) VALUES (?, ?, ?, ?)")
+        .bind(&req.did)
+        .bind(authenticate(&session, &state.pool).await?)
+        .bind(now()?) // 2038 bug
+        .bind(&req.data)
+        .execute(&state.pool)
+        .await
+        .map_err(ErrorInternalServerError)?;
 
     Ok(HttpResponse::Ok().body(
-        sqlx::query_scalar::<_, String>("SELECT cmd FROM cmd WHERE did=?")
+        sqlx::query_scalar::<_, String>("SELECT cmd FROM devices WHERE did=?")
             .bind(&req.did)
-            .fetch_one(&state.pool)
+            .fetch_optional(&state.pool)
             .await
-            .map_err(ErrorInternalServerError)?,
+            .map_err(ErrorInternalServerError)?
+            .unwrap_or("".to_string()),
     ))
 }
 
