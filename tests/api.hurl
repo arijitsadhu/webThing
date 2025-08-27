@@ -39,6 +39,9 @@ POST {{baseurl}}/download
 }
 HTTP 401
 
+GET {{baseurl}}/devices
+HTTP 401
+
 # Login
 
 POST {{baseurl}}/signup
@@ -115,6 +118,16 @@ jsonpath "$[1].did" == 5678
 jsonpath "$[1].data" == "Duis aute irure dolor in reprehenderit in voluptate velit esse\ncillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non\nproident, sunt in culpa qui officia deserunt mollit anim id est laborum."
 jsonpath "$[2].did" == 1234
 jsonpath "$[2].data" == "Ut enim ad minim veniam,\nquis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo\nconsequat."
+
+# List devices
+
+GET {{baseurl}}/devices
+[Options]
+output: -
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0]" == 1234
 
 # Logging out
 
