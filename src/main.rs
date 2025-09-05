@@ -2,7 +2,6 @@ use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
     App, Error, HttpResponse, HttpServer, Result, cookie,
     error::{ErrorInternalServerError, ErrorUnauthorized},
-    http::header::LOCATION,
     middleware::Logger,
     web,
 };
@@ -81,42 +80,34 @@ async fn authenticate(session: &Session, pool: &sqlx::sqlite::SqlitePool) -> Res
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    let pool = match std::env::var("DATABASE_FILE") {
-        Ok(file) => sqlx::sqlite::SqlitePool::connect_with(
+    let pool = if let Ok(file) = std::env::var("DATABASE_FILE") {
+        sqlx::sqlite::SqlitePool::connect_with(
             sqlx::sqlite::SqliteConnectOptions::new()
                 .filename(file)
                 .create_if_missing(true),
         )
         .await
-        .unwrap(),
-        Err(_) => sqlx::sqlite::SqlitePool::connect("sqlite::memory:")
+        .unwrap()
+    } else {
+        sqlx::sqlite::SqlitePool::connect("sqlite::memory:")
             .await
-            .unwrap(),
+            .unwrap()
     };
 
-    let port = match std::env::var("HTTP_PORT") {
-        Ok(port) => match port.parse() {
-            Ok(port) => port,
-            Err(_) => HTTP_PORT,
-        },
-        Err(_) => HTTP_PORT,
-    };
+    let port = std::env::var("HTTP_PORT")
+        .unwrap_or(HTTP_PORT.to_string())
+        .parse()
+        .unwrap_or(HTTP_PORT);
 
-    let expiry = match std::env::var("EXPIRY_SECONDS") {
-        Ok(time) => match time.parse() {
-            Ok(time) => time,
-            Err(_) => EXPIRY,
-        },
-        Err(_) => EXPIRY,
-    };
+    let expiry = std::env::var("EXPIRY_SECONDS")
+        .unwrap_or(EXPIRY.to_string())
+        .parse()
+        .unwrap_or(EXPIRY);
 
-    let timeout = match std::env::var("TIMEOUT_SECONDS") {
-        Ok(time) => match time.parse() {
-            Ok(time) => time,
-            Err(_) => TIMEOUT,
-        },
-        Err(_) => TIMEOUT,
-    };
+    let timeout = std::env::var("TIMEOUT_SECONDS")
+        .unwrap_or(TIMEOUT.to_string())
+        .parse()
+        .unwrap_or(TIMEOUT);
 
     sqlx::raw_sql(
         "CREATE TABLE IF NOT EXISTS users (
@@ -187,7 +178,7 @@ async fn signup(
     req: web::Json<LoginForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    if let None = session.get::<u32>("token")? {
+    if None == session.get::<u32>("token")? {
         let password = blake3::hash(req.password.as_bytes()).to_string();
 
         sqlx::query("INSERT INTO users (email, password, time, admin) VALUES (?, ?, ?, 0)")
@@ -207,7 +198,7 @@ async fn login(
     req: web::Json<LoginForm>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    if let None = session.get::<u32>("token")? {
+    if None == session.get::<u32>("token")? {
         let (uid, password): (u32, String) =
             sqlx::query_as("SELECT uid, password FROM users WHERE email=?")
                 .bind(&req.email)
@@ -247,9 +238,7 @@ async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResp
 
         Ok(HttpResponse::Ok().body("logout\n"))
     } else {
-        Ok(HttpResponse::SeeOther()
-            .insert_header((LOCATION, "/"))
-            .body("not logged in\n"))
+        Ok(HttpResponse::Ok().body("not logged in\n"))
     }
 }
 
@@ -315,7 +304,7 @@ async fn upload(
             .fetch_optional(&state.pool)
             .await
             .map_err(ErrorInternalServerError)?
-            .unwrap_or("".to_string()),
+            .unwrap_or_default(),
     ))
 }
 
@@ -352,7 +341,5 @@ async fn update(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
         .await
         .map_err(ErrorInternalServerError)?;
 
-    Ok(HttpResponse::SeeOther()
-        .insert_header((LOCATION, "/"))
-        .body("updated\n"))
+    Ok(HttpResponse::Ok().body("updated\n"))
 }
