@@ -1,3 +1,4 @@
+use actix_files::Files;
 use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
     App, Error, HttpResponse, HttpServer, Result, cookie,
@@ -5,6 +6,7 @@ use actix_web::{
     middleware::Logger,
     web,
 };
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 
 const HTTP_PORT: u16 = 80;
 const TIMEOUT: u32 = 100;
@@ -81,17 +83,15 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     let pool = if let Ok(file) = std::env::var("DATABASE_FILE") {
-        sqlx::sqlite::SqlitePool::connect_with(
-            sqlx::sqlite::SqliteConnectOptions::new()
+        SqlitePool::connect_with(
+            SqliteConnectOptions::new()
                 .filename(file)
                 .create_if_missing(true),
         )
         .await
         .unwrap()
     } else {
-        sqlx::sqlite::SqlitePool::connect("sqlite::memory:")
-            .await
-            .unwrap()
+        SqlitePool::connect("sqlite::memory:").await.unwrap()
     };
 
     let port = std::env::var("HTTP_PORT")
@@ -166,6 +166,11 @@ async fn main() -> std::io::Result<()> {
             .route("/upload", web::post().to(upload))
             .route("/download", web::post().to(download))
             .route("/update", web::get().to(update))
+            .service(
+                Files::new("/", "./static")
+                    .show_files_listing()
+                    .index_file("index.html"),
+            )
     })
     .workers(WORKERS)
     .bind(("0.0.0.0", port))?

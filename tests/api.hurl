@@ -2,7 +2,7 @@
 GET {{baseurl}}
 [Options]
 delay: 1s
-HTTP 404
+HTTP 200
 
 # Unaunthicated transactions
 POST {{baseurl}}/login

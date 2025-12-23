@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>webThing</title>
+</head>
+<body>
+
+<h1>webThing</h1>
+
+<h2>Signup</h2>
+<form action="signup" method="post" enctype="application/json">
+  <label for="email">Email</label>
+  <input type="text" id="email" name="email">
+  <label for="password">Password</label>
+  <input type="text" id="password" name="password">
+  <input type="submit">
+</form>
+
+<h2>Register</h2>
+<form action="register" method="post" enctype="application/json">
+  <label for="did">did</label>
+  <input type="text" id="did" name="did">
+  <input type="submit">
+</form>
+
+<h2>Devices</h2>
+<form action="devices" method="get" enctype="application/json">
+  <input type="submit">
+</form>
+
+<h2>Login</h2>
+<form action="login" method="post" enctype="application/json">
+  <label for="email">Email</label>
+  <input type="text" id="email" name="email">
+  <label for="password">Password</label>
+  <input type="text" id="password" name="password">
+  <input type="submit">
+</form>
+
+<h2>Logout</h2>
+<form action="logout" method="get" enctype="application/json">
+  <input type="submit">
+</form>
+
+<h2>Cmd</h2>
+<form action="cmd" method="post" enctype="application/json">
+  <label for="did">did</label>
+  <input type="text" id="did" name="did">
+  <label for="cmd">cmd</label>
+  <input type="text" id="cmd" name="cmd">
+  <input type="submit">
+</form>
+
+<h2>Upload</h2>
+<form action="upload" method="post" enctype="application/json">
+  <label for="did">did</label>
+  <input type="text" id="did" name="did">
+  <label for="data">data</label>
+  <input type="text" id="data" name="data">
+  <input type="submit">
+</form>
+
+<h2>Download</h2>
+<form action="download" method="post" enctype="application/json">
+  <label for="start">start</label>
+  <input type="text" id="start" name="start">
+  <label for="end">end</label>
+  <input type="text" id="end" name="end">
+  <input type="submit">
+</form>
+
+<h2>Update</h2>
+<form action="update" method="get" enctype="application/json">
+  <input type="submit">
+</form>
+
+</body>
+</html>
