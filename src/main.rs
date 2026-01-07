@@ -195,7 +195,7 @@ async fn signup(
             .map_err(ErrorInternalServerError)?;
     }
 
-    Ok(HttpResponse::Ok().body("signed up\n"))
+    Ok(HttpResponse::Ok().json("signed up"))
 }
 
 async fn login(
@@ -227,7 +227,7 @@ async fn login(
         }
     }
 
-    Ok(HttpResponse::Ok().body("logged in\n"))
+    Ok(HttpResponse::Ok().json("logged in"))
 }
 
 async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
@@ -241,9 +241,9 @@ async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResp
         session.remove("token");
         session.remove("uid");
 
-        Ok(HttpResponse::Ok().body("logout\n"))
+        Ok(HttpResponse::Ok().json("logout"))
     } else {
-        Ok(HttpResponse::Ok().body("not logged in\n"))
+        Ok(HttpResponse::Ok().json("not logged in"))
     }
 }
 
@@ -259,7 +259,7 @@ async fn register(
         .await
         .map_err(ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().body("registered\n"))
+    Ok(HttpResponse::Ok().json("registered"))
 }
 
 async fn devices(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
@@ -286,7 +286,7 @@ async fn cmd(
         .await
         .map_err(ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().body("cmd requested\n"))
+    Ok(HttpResponse::Ok().json("cmd requested"))
 }
 
 async fn upload(
@@ -303,7 +303,7 @@ async fn upload(
         .await
         .map_err(ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().body(
+    Ok(HttpResponse::Ok().json(
         sqlx::query_scalar::<_, String>("SELECT cmd FROM devices WHERE did=?")
             .bind(&req.did)
             .fetch_optional(&state.pool)
@@ -346,5 +346,5 @@ async fn update(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
         .await
         .map_err(ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().body("updated\n"))
+    Ok(HttpResponse::Ok().json("updated"))
 }

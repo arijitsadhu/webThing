@@ -20,7 +20,7 @@
   <h2>Register</h2>
   <form action="register">
     <label for="did">did</label>
-    <input type="text" id="did" name="did">
+    <input type="number" id="did" name="did">
     <button type="button" onclick="convertToJson(this.form, function (a) {document.getElementById('response').innerHTML = a})">Register</button>
   </form>
   <h2>Devices</h2>
@@ -42,7 +42,7 @@
   <h2>Cmd</h2>
   <form action="cmd">
     <label for="did">did</label>
-    <input type="text" id="did" name="did">
+    <input type="number" id="did" name="did">
     <label for="cmd">cmd</label>
     <input type="text" id="cmd" name="cmd">
     <button type="button" onclick="convertToJson(this.form, function (a) {document.getElementById('response').innerHTML = a})">Execute</button>
@@ -50,7 +50,7 @@
   <h2>Upload</h2>
   <form action="upload">
     <label for="did">did</label>
-    <input type="text" id="did" name="did">
+    <input type="number" id="did" name="did">
     <label for="data">data</label>
     <input type="text" id="data" name="data">
     <button type="button" onclick="convertToJson(this.form, function (a) {document.getElementById('response').innerHTML = a})">Upload</button>
@@ -58,9 +58,9 @@
   <h2>Download</h2>
   <form action="download">
     <label for="start">start</label>
-    <input type="text" id="start" name="start">
+    <input type="number" id="start" name="start">
     <label for="end">end</label>
-    <input type="text" id="end" name="end">
+    <input type="number" id="end" name="end">
     <button type="button" onclick="convertToJson(this.form, function (a) {document.getElementById('response').innerHTML = a})">Download</button>
   </form>
   <h2>Update</h2>
@@ -70,11 +70,10 @@
 </body>
 <script>
   function getJson(url, cbk) {
-    var xhr = new XMLHttpRequest();
+    let xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function () {
       if (cbk && this.readyState == 4 && this.status == 200) {
-        var data = JSON.parse(this.responseText);
-        cbk(data);
+        cbk(JSON.parse(this.responseText));
       }
     };
     xhr.open("GET", url, true);
@@ -82,19 +81,21 @@
   }
 
   function putJson(url, data) {
-    var xhr = new XMLHttpRequest();
+    let xhr = new XMLHttpRequest();
     xhr.open("PUT", url, true);
     xhr.setRequestHeader('Content-type', 'application/json');
     xhr.send(JSON.stringify(data));
   }
 
   function postJson(url, data, cbk) {
-    var xhr = new XMLHttpRequest();
+    let xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function () {
       if (cbk && this.readyState == 4) {
-        // var data = JSON.parse(this.responseText);
-        // cbk(data);
-        cbk(this.responseText);
+        try {
+          cbk(JSON.parse(this.responseText));
+        } catch (e) {
+          cbk(this.responseText);
+        }
       }
     };
     xhr.open("POST", url, true);
@@ -107,7 +108,11 @@
     for (let i = 0; i < form.elements.length; i++) {
       let element = form.elements[i];
       if (element.type !== "submit" && element.name) {
-        formData[element.name] = element.value;
+        if (isNaN(element.value)) {
+          formData[element.name] = element.value;
+        } else {
+          formData[element.name] = Number(element.value);
+        }
       }
     }
     postJson(form.action, formData, cbk)

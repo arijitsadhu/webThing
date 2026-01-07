@@ -72,7 +72,7 @@ POST {{baseurl}}/upload
     "data": "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod\ntempor incididunt ut labore et dolore magna aliqua."
 }
 HTTP 200
-``
+""
 
 #  Unregistered
 
@@ -98,7 +98,7 @@ POST {{baseurl}}/upload
     "data": "Ut enim ad minim veniam,\nquis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo\nconsequat."
 }
 HTTP 200
-`Lorem ipsum dolor sit amet`
+"Lorem ipsum dolor sit amet"
 
 # Downloads
 
