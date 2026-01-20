@@ -1,0 +1,130 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "SF Pro Text", Geneva, Tahoma, Arial, Helvetica, sans-serif;
+    font-size: large;
+    text-align: center;
+    background-color: white;
+    color: black;
+}
+
+/* Style the header */
+header {
+    background-color: whitesmoke;
+    padding: 1em;
+    border-radius: 1em;
+    text-align: center;
+    margin: 3em 1em 0;
+}
+
+/* Style the top navigation bar */
+nav {
+    background-color: whitesmoke;
+    position: fixed;
+    width: 100%;
+    top: 0;
+    padding: 0.25em;
+    border-bottom: 1px solid silver;
+}
+
+article {
+    padding-top: 2em;
+    width: 100%;
+    height: 100vh;
+}
+
+/* Clear floats after the columns */
+section:after {
+    content: "";
+    display: table;
+    clear: both;
+}
+
+/* Style the footer */
+footer {
+    background-color: whitesmoke;
+    border-top: 1px solid silver;
+    padding: 1em;
+    text-align: center;
+    font-size: smaller;
+    color: dimgrey;
+}
+
+h1 {
+    font-size: xx-large;
+}
+
+h2 {
+    font-size: large;
+}
+
+input,
+button {
+    font-size: large;
+}
+
+input[type=submit],
+button[type=button] {
+    background-color: dodgerblue;
+    border: 2px solid dodgerblue;
+    border-radius: 1em;
+    color: white;
+    padding: 0.22em 1em;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    transition-duration: 0.5s;
+    cursor: pointer;
+}
+
+input[type=submit]:hover,
+button[type=button]:hover {
+    border: 2px solid whitesmoke;
+    background-color: whitesmoke;
+    color: dodgerblue;
+}
+
+.hide {
+    display: none;
+}
+
+.on {
+    padding: 1em;
+    border-radius: 1em;
+    color: white;
+    background-color: lime;
+    font-weight: bold;
+}
+
+.off {
+    padding: 1em;
+    border-radius: 1em;
+    color: white;
+    background-color: red;
+    font-weight: bold;
+}
+
+.label {
+    text-align: left;
+    margin-left: 10%;
+}
+
+.label span {
+    font-weight: bolder;
+}
+
+@media (max-width: 600px) {
+
+    body,
+    h2,
+    input,
+    button {
+        font-size: medium;
+    }
+
+    h1 {
+        font-size: large;
+    }
+}
