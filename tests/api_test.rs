@@ -11,7 +11,7 @@ const COOKIE_FILE: &str = "session_cookie.txt";
 #[test]
 fn api_test() -> Result<(), Box<dyn std::error::Error>> {
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_webThing"))
-        .env("DATABASE_FILE", DATABASE_FILE)
+        .env("DATABASE_PATH", DATABASE_FILE)
         .env("HTTP_PORT", HTTP_PORT)
         .spawn()?;
 

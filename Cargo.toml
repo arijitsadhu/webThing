@@ -9,7 +9,9 @@ actix-session = { version = "0.10.1", features = ["cookie-session"] }
 actix-web = "4.11.0"
 blake3 = "1.8.2"
 env_logger = "0.11.8"
-hurl = "7.0.0"
-hurl_core = "7.0.0"
 serde = "1.0.219"
 sqlx = { version = "0.8.6", features = ["sqlite", "runtime-async-std"] }
+
+[dev-dependencies]
+hurl = "7.0.0"
+hurl_core = "7.0.0"

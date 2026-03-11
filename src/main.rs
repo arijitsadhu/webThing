@@ -1,3 +1,8 @@
+//! # webThing
+//!
+//! Proof of concept IoT REST HTTP JSON server using rust actix and SQLite through sqlx.
+//!
+
 use actix_files::Files;
 use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
@@ -8,46 +13,75 @@ use actix_web::{
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 
-const HTTP_PORT: u16 = 80;
+/// Default port
+const HTTP_PORT_NO: u16 = 80;
+
+/// Default session timeout time in seconds
 const TIMEOUT: u32 = 100;
+
+// Default data expiry time in seconds
 const EXPIRY: u32 = 3600 * 24 * 30;
+
+// Default number of threads
 const WORKERS: usize = 4;
 
+/// Port for HTTP server
+const HTTP_PORT: &str = "HTTP_PORT";
+
+/// Path to the SQLite database file
+const DATABASE_PATH: &str = "DATABASE_PATH";
+
+/// Expiry time for data deletion in seconds
+const DATA_EXPIRY: &str = "DATA_EXPIRY_SECONDS";
+
+/// Login session timeout in seconds
+const LOGIN_TIMEOUT: &str = "LOGIN_TIMEOUT_SECONDS";
+
+/// Max number of threads
+const WORKERS_MAX: &str = "WORKERS_MAX";
+
+/// Actix state
 struct AppState {
     pool: sqlx::sqlite::SqlitePool,
     timeout: u32,
     expiry: u32,
 }
 
+/// Login form
 #[derive(serde::Deserialize)]
 struct LoginForm {
     email: String,
     password: String,
 }
 
+// Register device form
 #[derive(serde::Deserialize)]
 struct RegisterForm {
     did: u32,
 }
 
+// Send command to device form
 #[derive(serde::Deserialize)]
 struct CmdForm {
     did: u32,
     cmd: String,
 }
 
+// Upload data from device form
 #[derive(serde::Deserialize)]
 struct UploadForm {
     did: u32,
     data: String,
 }
 
+// Request download device log date range form
 #[derive(serde::Deserialize)]
 struct DownloadForm {
     start: u32,
     end: u32,
 }
 
+// Download device log
 #[derive(sqlx::FromRow, serde::Serialize)]
 struct Logs {
     did: u32,
@@ -55,6 +89,7 @@ struct Logs {
     data: String,
 }
 
+/// Current unix time
 fn now() -> Result<u32, Error> {
     Ok(std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -62,6 +97,7 @@ fn now() -> Result<u32, Error> {
         .as_secs() as u32)
 }
 
+/// Verify session login
 async fn authenticate(session: &Session, pool: &sqlx::sqlite::SqlitePool) -> Result<u32, Error> {
     Ok(
         sqlx::query_scalar::<_, u32>("UPDATE login SET time = ? WHERE token = ? RETURNING uid")
@@ -82,7 +118,8 @@ async fn authenticate(session: &Session, pool: &sqlx::sqlite::SqlitePool) -> Res
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    let pool = if let Ok(file) = std::env::var("DATABASE_FILE") {
+    // process configuration
+    let pool = if let Ok(file) = std::env::var(DATABASE_PATH) {
         SqlitePool::connect_with(
             SqliteConnectOptions::new()
                 .filename(file)
@@ -93,22 +130,24 @@ async fn main() -> std::io::Result<()> {
     } else {
         SqlitePool::connect("sqlite::memory:").await.unwrap()
     };
-
-    let port = std::env::var("HTTP_PORT")
-        .unwrap_or(HTTP_PORT.to_string())
+    let port = std::env::var(HTTP_PORT)
+        .unwrap_or(HTTP_PORT_NO.to_string())
         .parse()
-        .unwrap_or(HTTP_PORT);
-
-    let expiry = std::env::var("EXPIRY_SECONDS")
+        .unwrap_or(HTTP_PORT_NO);
+    let expiry = std::env::var(DATA_EXPIRY)
         .unwrap_or(EXPIRY.to_string())
         .parse()
         .unwrap_or(EXPIRY);
-
-    let timeout = std::env::var("TIMEOUT_SECONDS")
+    let timeout = std::env::var(LOGIN_TIMEOUT)
         .unwrap_or(TIMEOUT.to_string())
         .parse()
         .unwrap_or(TIMEOUT);
+    let workers = std::env::var(WORKERS_MAX)
+        .unwrap_or(WORKERS.to_string())
+        .parse()
+        .unwrap_or(WORKERS);
 
+    // Create database tables if don't exist
     sqlx::raw_sql(
         "CREATE TABLE IF NOT EXISTS users (
             uid INTEGER PRIMARY KEY,
@@ -172,12 +211,13 @@ async fn main() -> std::io::Result<()> {
                     .index_file("index.html"),
             )
     })
-    .workers(WORKERS)
+    .workers(workers)
     .bind(("0.0.0.0", port))?
     .run()
     .await
 }
 
+/// Create account form
 async fn signup(
     session: Session,
     req: web::Json<LoginForm>,
@@ -198,6 +238,7 @@ async fn signup(
     Ok(HttpResponse::Ok().json("signed up"))
 }
 
+/// Login page
 async fn login(
     session: Session,
     req: web::Json<LoginForm>,
@@ -230,6 +271,7 @@ async fn login(
     Ok(HttpResponse::Ok().json("logged in"))
 }
 
+/// Logout page
 async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
     if let Some(token) = session.get::<u32>("token")? {
         sqlx::query("DELETE FROM login WHERE token=?")
@@ -247,6 +289,7 @@ async fn logout(session: Session, state: web::Data<AppState>) -> Result<HttpResp
     }
 }
 
+/// Register device page
 async fn register(
     session: Session,
     req: web::Json<RegisterForm>,
@@ -262,6 +305,7 @@ async fn register(
     Ok(HttpResponse::Ok().json("registered"))
 }
 
+/// List devices page
 async fn devices(session: Session, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
     Ok(HttpResponse::Ok().json(
         sqlx::query_scalar::<_, u32>("SELECT did FROM devices WHERE uid=?")
@@ -272,6 +316,7 @@ async fn devices(session: Session, state: web::Data<AppState>) -> Result<HttpRes
     ))
 }
 
+/// Send message to device page
 async fn cmd(
     session: Session,
     req: web::Json<CmdForm>,
@@ -289,6 +334,7 @@ async fn cmd(
     Ok(HttpResponse::Ok().json("cmd requested"))
 }
 
+/// Device upload log and receive message page
 async fn upload(
     session: Session,
     req: web::Json<UploadForm>,
@@ -313,6 +359,7 @@ async fn upload(
     ))
 }
 
+/// Download log page
 async fn download(
     session: Session,
     req: web::Json<DownloadForm>,
@@ -331,6 +378,7 @@ async fn download(
     ))
 }
 
+/// Process timeouts and expiry page
 async fn update(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
     let now = now()?;
 
