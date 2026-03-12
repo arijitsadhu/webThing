@@ -359,7 +359,7 @@ async fn upload(
     ))
 }
 
-/// Download log page
+/// Download logs page
 async fn download(
     session: Session,
     req: web::Json<DownloadForm>,
