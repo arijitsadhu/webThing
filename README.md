@@ -59,9 +59,7 @@ POST /upload
 }
 
 
-{
-    "foo"
-}
+"foo"
 ```
 
 Download logs with date range
@@ -93,12 +91,7 @@ List devices
 GET /devices
 
 
-{
-    1234,
-    2345
-    ...
-}
-
+[1234, 2345, ...]
 ```
 
 Logout user
@@ -123,9 +116,10 @@ Run docker micro-service
 * DATA_EXPIRY_SECONDS - Expiry time for log deletion in seconds
 * LOGIN_TIMEOUT_SECONDS - Login session timeout in seconds
 * WORKERS_MAX - Maximum number of threads
+* FILE_PATH - HTML static files path
 
 ## TODO
 * Timed update to process expiry and timeout.
 * Edit account
-* tests for DATA_EXPIRY_SECONDS, LOGIN_TIMEOUT_SECONDS and WORKERS_MAX
+* tests for DATA_EXPIRY_SECONDS, LOGIN_TIMEOUT_SECONDS, WORKERS_MAX and FILE_PATH
 

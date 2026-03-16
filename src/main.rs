@@ -19,17 +19,23 @@ const HTTP_PORT_NO: u16 = 80;
 /// Default session timeout time in seconds
 const TIMEOUT: u32 = 100;
 
-// Default data expiry time in seconds
+/// Default data expiry time in seconds
 const EXPIRY: u32 = 3600 * 24 * 30;
 
-// Default number of threads
+/// Default number of threads
 const WORKERS: usize = 4;
+
+/// Default path to the html static files
+const HTML_PATH: &str = "./static";
 
 /// Port for HTTP server
 const HTTP_PORT: &str = "HTTP_PORT";
 
 /// Path to the SQLite database file
 const DATABASE_PATH: &str = "DATABASE_PATH";
+
+/// Path to the html static files
+const FILE_PATH: &str = "FILE_PATH";
 
 /// Expiry time for data deletion in seconds
 const DATA_EXPIRY: &str = "DATA_EXPIRY_SECONDS";
@@ -130,6 +136,7 @@ async fn main() -> std::io::Result<()> {
     } else {
         SqlitePool::connect("sqlite::memory:").await.unwrap()
     };
+    let html_path = std::env::var(FILE_PATH).unwrap_or(HTML_PATH.to_string());
     let port = std::env::var(HTTP_PORT)
         .unwrap_or(HTTP_PORT_NO.to_string())
         .parse()
@@ -206,7 +213,7 @@ async fn main() -> std::io::Result<()> {
             .route("/download", web::post().to(download))
             .route("/update", web::get().to(update))
             .service(
-                Files::new("/", "./static")
+                Files::new("/", &html_path)
                     .show_files_listing()
                     .index_file("index.html"),
             )
