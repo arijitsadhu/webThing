@@ -12,6 +12,8 @@ use actix_web::{
     web,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
+use std::thread;
+use std::time::Duration;
 
 /// Default port
 const HTTP_PORT_NO: u16 = 80;
@@ -24,6 +26,9 @@ const EXPIRY: u32 = 3600 * 24 * 30;
 
 /// Default number of threads
 const WORKERS: usize = 4;
+
+/// Default sql cleanup polling time in seconds
+const POLLTIME: u64 = 60;
 
 /// Default path to the html static files
 const HTML_PATH: &str = "./static";
@@ -45,6 +50,9 @@ const LOGIN_TIMEOUT: &str = "LOGIN_TIMEOUT_SECONDS";
 
 /// Max number of threads
 const WORKERS_MAX: &str = "WORKERS_MAX";
+
+/// SQL cleanup polling time in seconds
+const POLL_TIME: &str = "POLL_TIME";
 
 /// Actix state
 struct AppState {
@@ -154,6 +162,11 @@ async fn main() -> std::io::Result<()> {
         .parse()
         .unwrap_or(WORKERS);
 
+    let poll_time = std::env::var(POLL_TIME)
+        .unwrap_or(POLLTIME.to_string())
+        .parse()
+        .unwrap_or(POLLTIME);
+
     // Create database tables if don't exist
     sqlx::raw_sql(
         "CREATE TABLE IF NOT EXISTS users (
@@ -184,6 +197,26 @@ async fn main() -> std::io::Result<()> {
     .execute(&pool)
     .await
     .unwrap();
+
+    let p = pool.clone();
+    let handle = thread::spawn(async move || {
+        let now = now().unwrap();
+        loop {
+            sqlx::query("DELETE FROM login WHERE time < ?")
+                .bind(now - timeout) // 2038 bug
+                .execute(&p)
+                .await
+                .unwrap();
+
+            sqlx::query("DELETE FROM log WHERE time < ?")
+                .bind(now - expiry) // 2038 bug
+                .execute(&p)
+                .await
+                .unwrap();
+
+            thread::sleep(Duration::from_secs(poll_time));
+        }
+    });
 
     HttpServer::new(move || {
         App::new()
@@ -222,6 +255,11 @@ async fn main() -> std::io::Result<()> {
     .bind(("0.0.0.0", port))?
     .run()
     .await
+    .unwrap();
+
+    handle.join().unwrap();
+
+    Ok(())
 }
 
 /// Create account form
