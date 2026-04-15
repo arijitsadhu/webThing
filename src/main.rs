@@ -9,10 +9,10 @@ use actix_web::{
     App, Error, HttpResponse, HttpServer, Result, cookie,
     error::{ErrorInternalServerError, ErrorUnauthorized},
     middleware::Logger,
+    rt,
     web,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
-use std::thread;
 use std::time::Duration;
 
 /// Default port
@@ -198,23 +198,24 @@ async fn main() -> std::io::Result<()> {
     .await
     .unwrap();
 
-    let p = pool.clone();
-    let handle = thread::spawn(async move || {
+    // Process timeouts and expiry
+    let conn = pool.clone();
+    let cleanup =rt::spawn(async move {
         let now = now().unwrap();
         loop {
             sqlx::query("DELETE FROM login WHERE time < ?")
                 .bind(now - timeout) // 2038 bug
-                .execute(&p)
+                .execute(&conn)
                 .await
                 .unwrap();
 
             sqlx::query("DELETE FROM log WHERE time < ?")
                 .bind(now - expiry) // 2038 bug
-                .execute(&p)
+                .execute(&conn)
                 .await
                 .unwrap();
 
-            thread::sleep(Duration::from_secs(poll_time));
+            rt::time::sleep(Duration::from_secs(poll_time)).await;
         }
     });
 
@@ -244,7 +245,6 @@ async fn main() -> std::io::Result<()> {
             .route("/cmd", web::post().to(cmd))
             .route("/upload", web::post().to(upload))
             .route("/download", web::post().to(download))
-            .route("/update", web::get().to(update))
             .service(
                 Files::new("/", &html_path)
                     .show_files_listing()
@@ -257,7 +257,7 @@ async fn main() -> std::io::Result<()> {
     .await
     .unwrap();
 
-    handle.join().unwrap();
+    let _ = cleanup.await;
 
     Ok(())
 }
@@ -421,23 +421,4 @@ async fn download(
         .await
         .map_err(ErrorInternalServerError)?,
     ))
-}
-
-/// Process timeouts and expiry page
-async fn update(state: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    let now = now()?;
-
-    sqlx::query("DELETE FROM login WHERE time < ?")
-        .bind(now - state.timeout) // 2038 bug
-        .execute(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?;
-
-    sqlx::query("DELETE FROM log WHERE time < ?")
-        .bind(now - state.expiry) // 2038 bug
-        .execute(&state.pool)
-        .await
-        .map_err(ErrorInternalServerError)?;
-
-    Ok(HttpResponse::Ok().json("updated"))
 }

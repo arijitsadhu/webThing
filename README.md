@@ -117,9 +117,9 @@ Run docker micro-service
 * LOGIN_TIMEOUT_SECONDS - Login session timeout in seconds
 * WORKERS_MAX - Maximum number of threads
 * FILE_PATH - HTML static files path
+* POLL_TIME - SQL cleanup polling time in seconds
 
 ## TODO
-* Timed update to process expiry and timeout.
 * Edit account
-* tests for DATA_EXPIRY_SECONDS, LOGIN_TIMEOUT_SECONDS, WORKERS_MAX and FILE_PATH
+* tests for DATA_EXPIRY_SECONDS, LOGIN_TIMEOUT_SECONDS, WORKERS_MAX, POLL_TIME and FILE_PATH
 
