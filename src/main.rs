@@ -9,8 +9,7 @@ use actix_web::{
     App, Error, HttpResponse, HttpServer, Result, cookie,
     error::{ErrorInternalServerError, ErrorUnauthorized},
     middleware::Logger,
-    rt,
-    web,
+    rt, web,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use std::time::Duration;
@@ -24,14 +23,14 @@ const TIMEOUT: u32 = 100;
 /// Default data expiry time in seconds
 const EXPIRY: u32 = 3600 * 24 * 30;
 
-/// Default number of threads
-const WORKERS: usize = 4;
-
 /// Default sql cleanup polling time in seconds
 const POLLTIME: u64 = 60;
 
+/// Default number of threads
+const WORKERS: usize = 4;
+
 /// Default path to the html static files
-const HTML_PATH: &str = "./static";
+const HTML_PATH: &str = "static";
 
 /// Port for HTTP server
 const HTTP_PORT: &str = "HTTP_PORT";
@@ -57,8 +56,6 @@ const POLL_TIME: &str = "POLL_TIME";
 /// Actix state
 struct AppState {
     pool: sqlx::sqlite::SqlitePool,
-    timeout: u32,
-    expiry: u32,
 }
 
 /// Login form
@@ -200,9 +197,11 @@ async fn main() -> std::io::Result<()> {
 
     // Process timeouts and expiry
     let conn = pool.clone();
-    let cleanup =rt::spawn(async move {
+    rt::spawn(async move {
         let now = now().unwrap();
         loop {
+            rt::time::sleep(Duration::from_secs(poll_time)).await;
+
             sqlx::query("DELETE FROM login WHERE time < ?")
                 .bind(now - timeout) // 2038 bug
                 .execute(&conn)
@@ -214,18 +213,12 @@ async fn main() -> std::io::Result<()> {
                 .execute(&conn)
                 .await
                 .unwrap();
-
-            rt::time::sleep(Duration::from_secs(poll_time)).await;
         }
     });
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(AppState {
-                pool: pool.clone(),
-                expiry: expiry,
-                timeout: timeout,
-            }))
+            .app_data(web::Data::new(AppState { pool: pool.clone() }))
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
             .wrap(
@@ -255,11 +248,6 @@ async fn main() -> std::io::Result<()> {
     .bind(("0.0.0.0", port))?
     .run()
     .await
-    .unwrap();
-
-    let _ = cleanup.await;
-
-    Ok(())
 }
 
 /// Create account form
